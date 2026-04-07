@@ -35,10 +35,6 @@ The installer adds three things to your Zed config (`~/.config/zed/`):
 
 If `tasks.json` or `keymap.json` already exist, the installer merges into them without overwriting your other settings.
 
-## Limitations
-
-Zed does not expose selection start/end row to tasks — only the cursor position and selected text. The script infers the line range by counting lines in the selection. It assumes downward selection (most common). If you select upward, the range may be slightly off.
-
 ## Uninstall
 
 ```bash
