@@ -37,9 +37,19 @@ fi
 
 green "Using clipboard command: ${CLIP_CMD}"
 
-# --- Helper: strip JSONC comments so jq can parse Zed config files ---
-strip_jsonc() {
-  sed 's|//.*$||' "$1" | jq '.'
+# --- Helper: check JSON file for comments ---
+check_jsonc() {
+  local file="$1"
+  local entry_desc="$2"
+  if ! jq '.' "$file" &>/dev/null; then
+    yellow "Warning: ${file} contains comments or invalid JSON — cannot auto-merge."
+    echo "Please add this entry manually:"
+    echo ""
+    echo "$entry_desc"
+    echo ""
+    return 1
+  fi
+  return 0
 }
 
 # --- Create script ---
@@ -94,19 +104,20 @@ JSON
 )
 
 if [ -f "${TASKS_FILE}" ]; then
-  TASKS_CLEAN=$(strip_jsonc "${TASKS_FILE}")
-  # Check if task already exists
-  if echo "${TASKS_CLEAN}" | jq -e --arg label "${TASK_LABEL}" 'map(.label) | index($label)' &>/dev/null; then
-    # Update existing task
-    echo "${TASKS_CLEAN}" | jq --argjson task "${NEW_TASK}" --arg label "${TASK_LABEL}" \
-      'map(if .label == $label then $task else . end)' > "${TASKS_FILE}.tmp"
-    mv "${TASKS_FILE}.tmp" "${TASKS_FILE}"
-    yellow "Updated existing task in ${TASKS_FILE}"
-  else
-    # Append to existing array
-    echo "${TASKS_CLEAN}" | jq --argjson task "${NEW_TASK}" '. + [$task]' > "${TASKS_FILE}.tmp"
-    mv "${TASKS_FILE}.tmp" "${TASKS_FILE}"
-    green "Added task to ${TASKS_FILE}"
+  if check_jsonc "${TASKS_FILE}" "${NEW_TASK}"; then
+    # Check if task already exists
+    if jq -e --arg label "${TASK_LABEL}" 'map(.label) | index($label)' "${TASKS_FILE}" &>/dev/null; then
+      # Update existing task
+      jq --argjson task "${NEW_TASK}" --arg label "${TASK_LABEL}" \
+        'map(if .label == $label then $task else . end)' "${TASKS_FILE}" > "${TASKS_FILE}.tmp"
+      mv "${TASKS_FILE}.tmp" "${TASKS_FILE}"
+      yellow "Updated existing task in ${TASKS_FILE}"
+    else
+      # Append to existing array
+      jq --argjson task "${NEW_TASK}" '. + [$task]' "${TASKS_FILE}" > "${TASKS_FILE}.tmp"
+      mv "${TASKS_FILE}.tmp" "${TASKS_FILE}"
+      green "Added task to ${TASKS_FILE}"
+    fi
   fi
 else
   echo "[${NEW_TASK}]" | jq '.' > "${TASKS_FILE}"
@@ -125,21 +136,23 @@ JSON
 )
 
 if [ -f "${KEYMAP_FILE}" ]; then
-  KEYMAP_CLEAN=$(strip_jsonc "${KEYMAP_FILE}")
-  # Check if our binding already exists in an Editor context block
-  if echo "${KEYMAP_CLEAN}" | jq -e --arg key "${KEYBINDING}" \
-    '[.[] | select(.context == "Editor") | .bindings[$key]] | any' &>/dev/null; then
-    # Update the binding in the existing Editor block
-    echo "${KEYMAP_CLEAN}" | jq --arg key "${KEYBINDING}" --arg label "${TASK_LABEL}" \
-      'map(if .context == "Editor" then .bindings[$key] = ["task::Spawn", { "task_name": $label }] else . end)' \
-      > "${KEYMAP_FILE}.tmp"
-    mv "${KEYMAP_FILE}.tmp" "${KEYMAP_FILE}"
-    yellow "Updated existing keybinding in ${KEYMAP_FILE}"
-  else
-    # Append new context block
-    echo "${KEYMAP_CLEAN}" | jq --argjson binding "${NEW_BINDING}" '. + [$binding]' > "${KEYMAP_FILE}.tmp"
-    mv "${KEYMAP_FILE}.tmp" "${KEYMAP_FILE}"
-    green "Added keybinding to ${KEYMAP_FILE}"
+  if check_jsonc "${KEYMAP_FILE}" "${NEW_BINDING}"; then
+    # Check if our binding already exists in an Editor context block
+    if jq -e --arg key "${KEYBINDING}" \
+      '[.[] | select(.context == "Editor") | .bindings[$key]] | any' \
+      "${KEYMAP_FILE}" &>/dev/null; then
+      # Update the binding in the existing Editor block
+      jq --arg key "${KEYBINDING}" --arg label "${TASK_LABEL}" \
+        'map(if .context == "Editor" then .bindings[$key] = ["task::Spawn", { "task_name": $label }] else . end)' \
+        "${KEYMAP_FILE}" > "${KEYMAP_FILE}.tmp"
+      mv "${KEYMAP_FILE}.tmp" "${KEYMAP_FILE}"
+      yellow "Updated existing keybinding in ${KEYMAP_FILE}"
+    else
+      # Append new context block
+      jq --argjson binding "${NEW_BINDING}" '. + [$binding]' "${KEYMAP_FILE}" > "${KEYMAP_FILE}.tmp"
+      mv "${KEYMAP_FILE}.tmp" "${KEYMAP_FILE}"
+      green "Added keybinding to ${KEYMAP_FILE}"
+    fi
   fi
 else
   echo "[${NEW_BINDING}]" | jq '.' > "${KEYMAP_FILE}"
