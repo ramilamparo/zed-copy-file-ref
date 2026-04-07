@@ -49,21 +49,12 @@ REL_PATH="$ZED_RELATIVE_FILE"
 ROW=$ZED_ROW
 
 if [ -n "$ZED_SELECTED_TEXT" ]; then
-  # Count lines in selection (wc -l counts newlines, +1 for the last line)
-  LINE_COUNT=$(printf '%s' "$ZED_SELECTED_TEXT" | wc -l)
-  LINE_COUNT=$((LINE_COUNT + 1))
+  # Count lines using awk (handles trailing newlines from visual line mode)
+  LINE_COUNT=$(printf '%s' "$ZED_SELECTED_TEXT" | awk 'END{print NR}')
 
   if [ "$LINE_COUNT" -gt 1 ]; then
-    # Assume cursor is at end of selection (most common: selecting downward)
-    START=$((ROW - LINE_COUNT + 1))
-    END=$ROW
-
-    # If START < 1, cursor was at the top (selected upward)
-    if [ "$START" -lt 1 ]; then
-      START=$ROW
-      END=$((ROW + LINE_COUNT - 1))
-    fi
-
+    START=$ROW
+    END=$((ROW + LINE_COUNT - 1))
     REF="@${PROJECT}/${REL_PATH}#L${START}-${END}"
   else
     REF="@${PROJECT}/${REL_PATH}#L${ROW}"
